@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Al Dashboard — Autonomous Labor Command Hub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🤖 Al Dashboard</h1>
+            <p class="subtitle">Autonomous Labor Command Hub</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Stats Overview -->
+        <section class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Tasks</h3>
+                <div class="stat-value" id="total-tasks">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>To Do</h3>
+                <div class="stat-value todo" id="todo-tasks">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>In Progress</h3>
+                <div class="stat-value in-progress" id="progress-tasks">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Done</h3>
+                <div class="stat-value done" id="done-tasks">-</div>
+            </div>
+        </section>
+
+        <div class="dashboard-grid">
+            <!-- Chat Interface -->
+            <section class="chat-panel">
+                <h2>💬 Chat with Al</h2>
+                <div class="chat-messages" id="chat-messages">
+                    <div class="message system">
+                        <p>Welcome to Al Dashboard! Ask Al to manage your workforce.</p>
+                    </div>
+                </div>
+                <form class="chat-input" id="chat-form">
+                    <input type="text" id="chat-message" placeholder="Tell Al what you need..." required>
+                    <button type="submit">Send</button>
+                </form>
+            </section>
+
+            <!-- Kanban Board -->
+            <section class="kanban-panel">
+                <h2>📋 Task Board</h2>
+                <div class="kanban-board">
+                    <div class="kanban-column">
+                        <h3>To Do</h3>
+                        <div class="task-list" id="todo-column"></div>
+                    </div>
+                    <div class="kanban-column">
+                        <h3>In Progress</h3>
+                        <div class="task-list" id="progress-column"></div>
+                    </div>
+                    <div class="kanban-column">
+                        <h3>Done</h3>
+                        <div class="task-list" id="done-column"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Worker Status -->
+            <section class="workers-panel">
+                <h2>👥 Workers</h2>
+                <div class="worker-list" id="worker-list"></div>
+            </section>
+        </div>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
