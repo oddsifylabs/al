@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Al Manager
+  al-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.hermes
+    environment:
+      - HERMES_PROFILE=al-manager
+      - OLLAMA_HOST=host.docker.internal:11434
+    volumes:
+      - hermes_data:/root/.hermes
+    ports:
+      - "8080:8080"  # Dashboard
+      - "8081:8081"  # Manager API
+    restart: unless-stopped
+    networks:
+      - al-network
+
+  # Al Dashboard
+  al-dashboard:
+    build:
+      context: ./al-dashboard
+      dockerfile: Dockerfile
+    environment:
+      - AL_MANAGER_PROFILE=al-manager
+      - HERMES_HOME=/root/.hermes
+      - FLASK_ENV=production
+    volumes:
+      - hermes_data:/root/.hermes:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - al-manager
+    restart: unless-stopped
+    networks:
+      - al-network
+
+  # Optional: Ollama (if running models locally)
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - al-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Optional: PostgreSQL (for production Kanban)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=al_kanban
+      - POSTGRES_USER=al
+      - POSTGRES_PASSWORD=change-me
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - al-network
+
+volumes:
+  hermes_data:
+  ollama_data:
+  postgres_data:
+
+networks:
+  al-network:
+    driver: bridge
