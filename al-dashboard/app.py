@@ -20,6 +20,11 @@ def dashboard():
     """Main dashboard view"""
     return render_template('dashboard.html')
 
+@app.route('/health')
+def health():
+    """Health check endpoint for Docker"""
+    return jsonify({'status': 'healthy', 'service': 'al-dashboard'}), 200
+
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
     """Get all Kanban tasks"""
