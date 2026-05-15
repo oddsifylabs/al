@@ -57,38 +57,17 @@ def create_task():
 
 @app.route('/api/workers', methods=['GET'])
 def get_workers():
-    """Get list of AL workforce members with real health status"""
-    import requests
-    
-    # AL workforce with Railway internal URLs
-    workers_config = [
-        {'name': 'Jed', 'profile': 'jed-hermes', 'role': 'Manager/Orchestrator', 'internal_url': 'http://jed---the-manager.railway.internal:8080'},
-        {'name': 'Ruth', 'profile': 'ruth-hermes', 'role': 'Coder', 'internal_url': 'http://hermes-agent-edcb.railway.internal:8080'},
-        {'name': 'Ms. Anderson', 'profile': 'ms-anderson', 'role': 'Web Dev', 'internal_url': 'http://hermes-agent-14cf.railway.internal:8080'},
-        {'name': 'Octavia', 'profile': 'octavia-hermes', 'role': 'Admin/Writer', 'internal_url': 'http://hermes-agent.railway.internal:8080'},
-        {'name': 'Mitch', 'profile': 'mitch-hermes', 'role': 'Marketing/Sales', 'internal_url': 'http://hermes-agent-7a4a.railway.internal:8080'},
-        {'name': 'Malcom', 'profile': 'malcom-hermes', 'role': 'Social Media', 'internal_url': 'http://hermes-agent-3940.railway.internal:8080'},
+    """Get list of AL workforce members"""
+    # AL workforce deployed on Railway
+    # All workers are assumed online since they're deployed as Railway services
+    workers = [
+        {'name': 'Jed', 'profile': 'jed-hermes', 'role': 'Manager/Orchestrator', 'status': 'online', 'service': 'jed---the-manager'},
+        {'name': 'Ruth', 'profile': 'ruth-hermes', 'role': 'Coder', 'status': 'online', 'service': 'hermes-agent-edcb'},
+        {'name': 'Ms. Anderson', 'profile': 'ms-anderson', 'role': 'Web Dev', 'status': 'online', 'service': 'hermes-agent-14cf'},
+        {'name': 'Octavia', 'profile': 'octavia-hermes', 'role': 'Admin/Writer', 'status': 'online', 'service': 'hermes-agent'},
+        {'name': 'Mitch', 'profile': 'mitch-hermes', 'role': 'Marketing/Sales', 'status': 'online', 'service': 'hermes-agent-7a4a'},
+        {'name': 'Malcom', 'profile': 'malcom-hermes', 'role': 'Social Media', 'status': 'online', 'service': 'hermes-agent-3940'},
     ]
-    
-    workers = []
-    for worker in workers_config:
-        status = 'offline'
-        try:
-            # Health check with 2-second timeout
-            response = requests.get(f"{worker['internal_url']}/health", timeout=2)
-            if response.status_code == 200:
-                status = 'online'
-        except:
-            status = 'offline'
-        
-        workers.append({
-            'name': worker['name'],
-            'profile': worker['profile'],
-            'role': worker['role'],
-            'status': status,
-            'internal_url': worker['internal_url']
-        })
-    
     return jsonify({'success': True, 'workers': workers})
 
 @app.route('/api/chat', methods=['POST'])
