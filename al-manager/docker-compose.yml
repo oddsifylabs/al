@@ -4,7 +4,7 @@ services:
   # AL Dashboard
   al-dashboard:
     build:
-      context: ./al-dashboard
+      context: ../al-dashboard
       dockerfile: Dockerfile
     environment:
       - HERMES_HOME=/root/.hermes
