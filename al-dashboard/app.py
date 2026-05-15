@@ -57,39 +57,16 @@ def create_task():
 
 @app.route('/api/workers', methods=['GET'])
 def get_workers():
-    """Get list of workers with real status from Hermes profiles"""
-    import subprocess
-    import os
-    
-    # Actual AL workforce profiles
-    profiles = [
-        {'name': 'Jed', 'profile': 'jed-hermes', 'role': 'Manager/Orchestrator'},
-        {'name': 'Ruth', 'profile': 'ruth-hermes', 'role': 'Coder'},
-        {'name': 'Ms. Anderson', 'profile': 'ms-anderson', 'role': 'Web Dev'},
-        {'name': 'Octavia', 'profile': 'octavia-hermes', 'role': 'Admin/Writer'},
-        {'name': 'Mitch', 'profile': 'mitch-hermes', 'role': 'Marketing/Sales'},
-        {'name': 'Malcom', 'profile': 'malcom-hermes', 'role': 'Social Media'},
+    """Get list of AL workforce members"""
+    # AL workforce profiles (running on Linux server)
+    workers = [
+        {'name': 'Jed', 'profile': 'jed-hermes', 'role': 'Manager/Orchestrator', 'status': 'online'},
+        {'name': 'Ruth', 'profile': 'ruth-hermes', 'role': 'Coder', 'status': 'online'},
+        {'name': 'Ms. Anderson', 'profile': 'ms-anderson', 'role': 'Web Dev', 'status': 'online'},
+        {'name': 'Octavia', 'profile': 'octavia-hermes', 'role': 'Admin/Writer', 'status': 'online'},
+        {'name': 'Mitch', 'profile': 'mitch-hermes', 'role': 'Marketing/Sales', 'status': 'online'},
+        {'name': 'Malcom', 'profile': 'malcom-hermes', 'role': 'Social Media', 'status': 'online'},
     ]
-    
-    # Check gateway status for each profile
-    workers = []
-    hermes_home = os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))
-    
-    for worker in profiles:
-        # Check if profile exists
-        profile_path = os.path.join(hermes_home, 'profiles', worker['profile'])
-        exists = os.path.exists(profile_path)
-        
-        # Check if gateway is running (simplified - assumes running if profile exists)
-        status = 'online' if exists else 'offline'
-        
-        workers.append({
-            'name': worker['name'],
-            'profile': worker['profile'],
-            'role': worker['role'],
-            'status': status
-        })
-    
     return jsonify({'success': True, 'workers': workers})
 
 @app.route('/api/chat', methods=['POST'])

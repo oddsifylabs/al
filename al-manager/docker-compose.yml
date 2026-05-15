@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # AL Dashboard
   al-dashboard:
@@ -9,6 +11,10 @@ services:
       - AL_MANAGER_PROFILE=jed-hermes
       - FLASK_ENV=production
       - PORT=8080
+    volumes:
+      # Mount your Hermes profiles from Windows (read-only for safety)
+      # Replace C:\Users\Jesse C with your actual Windows username path
+      - C:\Users\Jesse C\.hermes:/root/.hermes:ro
     ports:
       - "8080:8080"
     restart: unless-stopped
