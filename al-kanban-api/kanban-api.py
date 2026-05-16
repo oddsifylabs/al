@@ -103,10 +103,16 @@ def init_db():
 @app.route('/health')
 def health():
     """Health check endpoint"""
-    if os.path.exists(KANBAN_DB):
-        return jsonify({'status': 'healthy', 'service': 'hermes-kanban-api', 'db': KANBAN_DB}), 200
-    else:
-        return jsonify({'status': 'unhealthy', 'service': 'hermes-kanban-api', 'error': 'Database not found'}), 503
+    try:
+        # Try to get a connection (this will init DB if needed)
+        conn = get_db_connection()
+        if conn:
+            conn.close()
+            return jsonify({'status': 'healthy', 'service': 'hermes-kanban-api', 'db': KANBAN_DB}), 200
+        else:
+            return jsonify({'status': 'unhealthy', 'service': 'hermes-kanban-api', 'error': 'Could not connect to database'}), 503
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'service': 'hermes-kanban-api', 'error': str(e)}), 503
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
