@@ -17,12 +17,14 @@ app = Flask(__name__)
 RAILWAY_VOLUME = os.environ.get('RAILWAY_SHARED_VOLUME', '/data')
 KANBAN_DB_PATH = os.environ.get('KANBAN_DB_PATH', os.path.join(RAILWAY_VOLUME, 'kanban.db'))
 
-# Fallback to local Hermes home if Railway volume doesn't exist
-if not os.path.exists(RAILWAY_VOLUME):
+# Check if Railway volume exists, otherwise use local Hermes home
+if os.path.exists(RAILWAY_VOLUME) and os.access(RAILWAY_VOLUME, os.W_OK):
+    KANBAN_DB = KANBAN_DB_PATH
+    print(f"Using Railway volume: {KANBAN_DB}")
+else:
     HERMES_HOME = os.path.expanduser('~/.hermes')
     KANBAN_DB = os.path.join(HERMES_HOME, 'kanban.db')
-else:
-    KANBAN_DB = KANBAN_DB_PATH
+    print(f"Railway volume not available, using local: {KANBAN_DB}")
 
 def get_db_connection():
     """Get database connection"""
