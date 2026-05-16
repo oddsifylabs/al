@@ -26,11 +26,77 @@ else:
 
 def get_db_connection():
     """Get database connection"""
+    # Ensure directory exists
+    db_dir = os.path.dirname(KANBAN_DB)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+    
     if not os.path.exists(KANBAN_DB):
-        return None
+        # Initialize database with Hermes Kanban schema
+        init_db()
+    
     conn = sqlite3.connect(KANBAN_DB)
     conn.row_factory = sqlite3.Row
     return conn
+
+def init_db():
+    """Initialize Hermes Kanban database schema"""
+    conn = sqlite3.connect(KANBAN_DB)
+    cursor = conn.cursor()
+    
+    # Create tasks table with Hermes Kanban schema
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            id                   TEXT PRIMARY KEY,
+            title                TEXT NOT NULL,
+            body                 TEXT,
+            assignee             TEXT,
+            status               TEXT NOT NULL,
+            priority             INTEGER DEFAULT 0,
+            created_by           TEXT,
+            created_at           INTEGER NOT NULL,
+            started_at           INTEGER,
+            completed_at         INTEGER,
+            workspace_kind       TEXT NOT NULL DEFAULT 'scratch',
+            workspace_path       TEXT,
+            claim_lock           TEXT,
+            claim_expires        INTEGER,
+            tenant               TEXT,
+            result               TEXT,
+            idempotency_key      TEXT,
+            spawn_failures       INTEGER NOT NULL DEFAULT 0,
+            worker_pid           INTEGER,
+            last_spawn_error     TEXT,
+            max_runtime_seconds  INTEGER,
+            last_heartbeat_at    INTEGER,
+            current_run_id       INTEGER,
+            workflow_template_id TEXT,
+            current_step_key     TEXT,
+            skills               TEXT,
+            consecutive_failures INTEGER NOT NULL DEFAULT 0,
+            last_failure_error   TEXT,
+            max_retries          INTEGER
+        )
+    ''')
+    
+    # Create task_runs table (for future use)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS task_runs (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id              TEXT NOT NULL,
+            started_at           INTEGER NOT NULL,
+            completed_at         INTEGER,
+            status               TEXT NOT NULL,
+            result               TEXT,
+            worker_pid           INTEGER,
+            error                TEXT,
+            FOREIGN KEY (task_id) REFERENCES tasks(id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print(f"Initialized Kanban database at {KANBAN_DB}")
 
 @app.route('/health')
 def health():
@@ -154,12 +220,12 @@ def create_task():
         parents = data.get('parents', '')
         
         cursor = conn.cursor()
-        now = datetime.now().isoformat()
+        now = int(datetime.now().timestamp())
         
         cursor.execute('''
-            INSERT INTO tasks (id, title, assignee, status, body, parents, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (task_id, title, assignee, status, body, parents, now, now))
+            INSERT INTO tasks (id, title, assignee, status, body, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (task_id, title, assignee, status, body, 'api', now))
         
         conn.commit()
         conn.close()
