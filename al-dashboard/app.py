@@ -27,12 +27,15 @@ def health():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all Kanban tasks from Jed Kanban API"""
+    """Get all Kanban tasks from Hermes Kanban API"""
     import requests
     
+    # Use Kanban API URL from env var or default to Railway internal URL
+    kanban_api_url = os.environ.get('KANBAN_API_URL', 'http://hermes-kanban-api.railway.internal:8080')
+    
     try:
-        # Fetch tasks from Jed Kanban API via internal Railway network
-        response = requests.get('http://jed-kanban-api.railway.internal:8080/api/tasks', timeout=3)
+        # Fetch tasks from Kanban API via internal Railway network
+        response = requests.get(f'{kanban_api_url}/api/tasks', timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
@@ -41,7 +44,7 @@ def get_tasks():
         pass
     
     # Fallback: return empty list if API is unavailable
-    return jsonify({'success': True, 'tasks': [], 'source': 'Jed Kanban API - Unavailable'})
+    return jsonify({'success': True, 'tasks': [], 'source': 'Hermes Kanban API - Unavailable'})
 
 @app.route('/api/tasks', methods=['POST'])
 def create_task():
@@ -75,6 +78,9 @@ def chat():
     """Chat with Al - creates tasks from user messages"""
     import requests
     
+    # Use Kanban API URL from env var or default to Railway internal URL
+    kanban_api_url = os.environ.get('KANBAN_API_URL', 'http://hermes-kanban-api.railway.internal:8080')
+    
     data = request.json
     message = data.get('message', '')
     
@@ -91,9 +97,9 @@ def chat():
             'body': f'Task created via dashboard chat',
         }
         
-        # Send to Jed Kanban API
+        # Send to Kanban API
         response = requests.post(
-            'http://jed-kanban-api.railway.internal:8080/api/tasks',
+            f'{kanban_api_url}/api/tasks',
             json=task_data,
             timeout=5
         )
@@ -118,30 +124,24 @@ def chat():
             'error': str(e),
             'response': '❌ Error connecting to Kanban API. Please try again.'
         })
-    message = data.get('message', '')
-    # This would integrate with Hermes to send message to Al Manager
-    # For now, return placeholder
-    return jsonify({
-        'success': True,
-        'response': f'Al received: "{message}". Hermes integration pending.',
-        'timestamp': datetime.now().isoformat()
-    })
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Get dashboard statistics from Jed's Kanban API"""
+    """Get dashboard statistics from Hermes Kanban API"""
     import requests
     
-    # Try to get stats from Jed Kanban API via internal Railway network
+    # Use Kanban API URL from env var or default to Railway internal URL
+    kanban_api_url = os.environ.get('KANBAN_API_URL', 'http://hermes-kanban-api.railway.internal:8080')
+    
     try:
-        response = requests.get('http://jed-kanban-api.railway.internal:8080/api/stats', timeout=3)
+        response = requests.get(f'{kanban_api_url}/api/stats', timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
                 return jsonify({
                     'success': True,
                     'stats': data.get('stats', {'total': 0, 'todo': 0, 'in_progress': 0, 'done': 0}),
-                    'source': 'Jed Kanban API - Live Data'
+                    'source': data.get('source', 'Hermes Kanban API - Live Data')
                 })
     except Exception as e:
         pass
@@ -150,7 +150,7 @@ def get_stats():
     return jsonify({
         'success': True,
         'stats': {'total': 0, 'todo': 0, 'in_progress': 0, 'done': 0},
-        'source': 'Jed Kanban API - Unavailable'
+        'source': 'Hermes Kanban API - Unavailable'
     })
 
 if __name__ == '__main__':
