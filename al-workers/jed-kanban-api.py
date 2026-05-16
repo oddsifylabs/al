@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 # Configuration
 HERMES_HOME = os.environ.get('HERMES_HOME', '/tmp')
-KANBAN_DB = os.path.join(HERMES_HOME, 'kanban.db')
+KANBAN_DB = os.environ.get('KANBAN_DB_PATH', os.path.join(HERMES_HOME, 'kanban.db'))
 
 def get_db_connection():
     """Get database connection"""
