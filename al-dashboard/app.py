@@ -27,12 +27,12 @@ def health():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    """Get all Kanban tasks from Jed (Manager)"""
+    """Get all Kanban tasks from Jed Kanban API"""
     import requests
     
     try:
-        # Fetch tasks from Jed via internal Railway network
-        response = requests.get('http://jed---the-manager.railway.internal:8080/api/tasks', timeout=3)
+        # Fetch tasks from Jed Kanban API via internal Railway network
+        response = requests.get('http://jed-kanban-api.railway.internal:8080/api/tasks', timeout=3)
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
@@ -40,8 +40,8 @@ def get_tasks():
     except Exception as e:
         pass
     
-    # Fallback: return empty list if Jed is unavailable
-    return jsonify({'success': True, 'tasks': [], 'source': 'Jed (Manager) - Unavailable'})
+    # Fallback: return empty list if API is unavailable
+    return jsonify({'success': True, 'tasks': [], 'source': 'Jed Kanban API - Unavailable'})
 
 @app.route('/api/tasks', methods=['POST'])
 def create_task():
@@ -85,28 +85,28 @@ def chat_with_al():
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Get dashboard statistics from Jed's Kanban database"""
+    """Get dashboard statistics from Jed's Kanban API"""
     import requests
     
-    # Try to get stats from Jed (Manager) via internal Railway network
+    # Try to get stats from Jed Kanban API via internal Railway network
     try:
-        response = requests.get('http://jed---the-manager.railway.internal:8080/api/stats', timeout=3)
+        response = requests.get('http://jed-kanban-api.railway.internal:8080/api/stats', timeout=3)
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
                 return jsonify({
                     'success': True,
                     'stats': data.get('stats', {'total': 0, 'todo': 0, 'in_progress': 0, 'done': 0}),
-                    'source': 'Jed (Manager) - Live Data'
+                    'source': 'Jed Kanban API - Live Data'
                 })
     except Exception as e:
         pass
     
-    # Fallback: return zeros if Jed is unavailable
+    # Fallback: return zeros if API is unavailable
     return jsonify({
         'success': True,
         'stats': {'total': 0, 'todo': 0, 'in_progress': 0, 'done': 0},
-        'source': 'Jed (Manager) - Unavailable'
+        'source': 'Jed Kanban API - Unavailable'
     })
 
 if __name__ == '__main__':
