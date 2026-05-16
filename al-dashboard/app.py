@@ -71,9 +71,53 @@ def get_workers():
     return jsonify({'success': True, 'workers': workers})
 
 @app.route('/api/chat', methods=['POST'])
-def chat_with_al():
-    """Chat with Al Manager"""
+def chat():
+    """Chat with Al - creates tasks from user messages"""
+    import requests
+    
     data = request.json
+    message = data.get('message', '')
+    
+    if not message:
+        return jsonify({'success': False, 'error': 'No message provided'}), 400
+    
+    # Simple task creation from chat message
+    # Create a task with the message as the title
+    try:
+        task_data = {
+            'title': message[:100],  # Truncate long messages
+            'assignee': None,  # Unassigned initially
+            'status': 'todo',
+            'body': f'Task created via dashboard chat',
+        }
+        
+        # Send to Jed Kanban API
+        response = requests.post(
+            'http://jed-kanban-api.railway.internal:8080/api/tasks',
+            json=task_data,
+            timeout=5
+        )
+        
+        if response.status_code == 201:
+            result = response.json()
+            return jsonify({
+                'success': True,
+                'message': f"Task created: {message[:50]}...",
+                'task': result.get('task'),
+                'response': '✅ Task created and added to Kanban board!'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to create task',
+                'response': '❌ Failed to create task. Please try again.'
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'response': '❌ Error connecting to Kanban API. Please try again.'
+        })
     message = data.get('message', '')
     # This would integrate with Hermes to send message to Al Manager
     # For now, return placeholder
