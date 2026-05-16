@@ -12,8 +12,8 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Configuration
-HERMES_HOME = os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))
-KANBAN_DB = os.path.join(HERMES_HOME, 'profiles', 'jed-hermes', 'kanban.db')
+HERMES_HOME = os.environ.get('HERMES_HOME', '/tmp')
+KANBAN_DB = os.path.join(HERMES_HOME, 'kanban.db')
 
 def get_db_connection():
     """Get database connection"""
