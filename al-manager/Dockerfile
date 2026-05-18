@@ -11,5 +11,6 @@ RUN pip install --no-cache-dir requests
 
 ENV DASHBOARD_URL=http://al-dashboard:8080
 ENV POLL_INTERVAL=30
+ENV OPENROUTER_MODEL=qwen/qwen3.5:cloud
 
 CMD ["python", "jed-poller.py"]

@@ -38,6 +38,10 @@ Create a new service in Railway dashboard:
 3. Set env vars:
    - `DASHBOARD_URL` = `http://al-dashboard.railway.internal:8080`
    - `POLL_INTERVAL` = `30`
+   - `OPENROUTER_API_KEY` = (your OpenRouter key — get one at openrouter.ai)
+   - `OPENROUTER_MODEL` = `qwen/qwen3.5:cloud` (or any OpenRouter model)
+
+Without `OPENROUTER_API_KEY`, Jed falls back to keyword-based assignment.
 
 ---
 
@@ -51,12 +55,31 @@ Repeat for each worker. Example for Ruth:
    - `WORKER_ID` = `ruth`
    - `DASHBOARD_URL` = `http://al-dashboard.railway.internal:8080`
    - `POLL_INTERVAL` = `30`
+   - `HERMES_PROFILE` = `ruth-hermes` (optional, defaults to `{WORKER_ID}-hermes`)
+   - `HERMES_CMD` = `hermes` (optional, path to Hermes CLI)
+   - `HERMES_TIMEOUT` = `300` (optional, seconds per task)
 
 Repeat with `WORKER_ID` set to:
 - `ms-anderson`
 - `octavia`
 - `mitch`
 - `malcom`
+
+### Hermes Integration
+
+For workers to actually execute tasks (not just simulate), Hermes must be installed in the container. Two options:
+
+**Option A: Pre-install Hermes in the Dockerfile**
+```dockerfile
+# Add to al-workers/Dockerfile before CMD
+RUN pip install hermes-agent  # or however Hermes is distributed
+```
+
+**Option B: Mount Hermes as a volume**
+If Hermes is already installed on a Railway volume, set `HERMES_CMD` to the full path.
+
+**Option C: Fallback mode**
+If Hermes is not available, workers still run but use limited fallback execution (web search, basic analysis). The dashboard will show the result and note that Hermes was unavailable.
 
 ---
 
@@ -83,3 +106,19 @@ http://<service-name>.railway.internal:<port>
 ```
 
 Make sure your `DASHBOARD_URL` uses the internal URL so traffic stays within Railway's network.
+
+---
+
+## Task Flow Example
+
+1. You send "Create a landing page for our new product" in dashboard chat
+2. Dashboard creates task with `status: pending_review`
+3. Jed polls, sees the task, calls OpenRouter LLM
+4. LLM decomposes into:
+   - "Design landing page mockup" → ms-anderson
+   - "Write landing page copy" → octavia
+   - "Build HTML/CSS landing page" → ms-anderson
+   - "Set up conversion tracking" → mitch
+5. Jed creates 4 subtasks with `status: todo`
+6. Workers poll, pick up their tasks, invoke Hermes to execute
+7. Results flow back to dashboard, tasks move to `done`
