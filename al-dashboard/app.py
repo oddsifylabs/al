@@ -7,9 +7,10 @@ PostgreSQL-backed task router, Kanban API, and web UI
 import os
 import json
 import uuid
+import requests
 import psycopg2
 import psycopg2.extras
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
@@ -19,7 +20,12 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL env var required")
 
+RAILWAY_API_TOKEN = os.environ.get("RAILWAY_API_TOKEN")
+RAILWAY_PROJECT_ID = os.environ.get("RAILWAY_PROJECT_ID")
+RAILWAY_GQL_URL = "https://backboard.railway.com/graphql/v2"
+
 # Railway internal URLs for workers
+# Optional: add "railway_service_id" once you know it for tighter integration
 WORKERS = {
     "jed": {"name": "Jed Hermes", "role": "Manager", "tg": "@jedhermesbot", "url": "http://jed---the-manager.railway.internal"},
     "ruth": {"name": "Ruth Hermes", "role": "Coder", "tg": "", "url": "http://hermes-agent-edcb.railway.internal"},
@@ -28,6 +34,58 @@ WORKERS = {
     "mitch": {"name": "Mitch Hermes", "role": "Sales & Marketing", "tg": "@MitchHermes_Bot", "url": "http://hermes-agent-7a4a.railway.internal"},
     "malcom": {"name": "Malcom Hermes", "role": "Social Media", "tg": "@MalcomSMMBot", "url": "http://hermes-agent-3940.railway.internal"},
 }
+
+
+# ── Railway GraphQL Helper ──────────────────────────────────────────
+
+def railway_gql(query: str, variables: dict = None):
+    """Execute a Railway GraphQL query/mutation. Returns (data, error)."""
+    if not RAILWAY_API_TOKEN:
+        return None, "RAILWAY_API_TOKEN not configured"
+    headers = {
+        "Authorization": f"Bearer {RAILWAY_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+    try:
+        r = requests.post(RAILWAY_GQL_URL, json=payload, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        if "errors" in data:
+            return None, data["errors"][0].get("message", str(data["errors"]))
+        return data.get("data"), None
+    except requests.exceptions.RequestException as e:
+        return None, str(e)
+
+
+def _service_id_from_name(name: str):
+    """Look up a Railway service ID by its display name."""
+    if not RAILWAY_PROJECT_ID:
+        return None
+    q = """
+    query Project($id: String!) {
+      project(id: $id) {
+        services {
+          edges {
+            node {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+    """
+    data, err = railway_gql(q, {"id": RAILWAY_PROJECT_ID})
+    if err or not data:
+        return None
+    for edge in data.get("project", {}).get("services", {}).get("edges", []):
+        node = edge.get("node", {})
+        if node.get("name") == name:
+            return node.get("id")
+    return None
 
 # ── DB Helpers ──────────────────────────────────────────────────────
 def get_db():
@@ -428,7 +486,206 @@ def worker_heartbeat(worker_id):
     return jsonify({"success": True})
 
 
-# ── Init ────────────────────────────────────────────────────────────
+# ── Railway Ops ──────────────────────────────────────────────────────────
+
+def _service_instance_id(service_name: str):
+    """Get the first service instance ID for a given service name."""
+    if not RAILWAY_PROJECT_ID:
+        return None, "RAILWAY_PROJECT_ID not configured"
+    q = """
+    query Project($id: String!) {
+      project(id: $id) {
+        services {
+          edges {
+            node {
+              id
+              name
+              serviceInstances {
+                edges {
+                  node {
+                    id
+                    environmentId
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    data, err = railway_gql(q, {"id": RAILWAY_PROJECT_ID})
+    if err:
+        return None, err
+    for edge in data.get("project", {}).get("services", {}).get("edges", []):
+        node = edge.get("node", {})
+        if node.get("name") == service_name:
+            instances = node.get("serviceInstances", {}).get("edges", [])
+            if instances:
+                return instances[0]["node"]["id"], None
+            return None, f"No instances found for service {service_name}"
+    return None, f"Service {service_name} not found"
+
+
+@app.route("/api/railway/services", methods=["GET"])
+def railway_services():
+    """List all services in the Railway project with status"""
+    if not RAILWAY_PROJECT_ID:
+        return jsonify({"success": False, "error": "RAILWAY_PROJECT_ID not configured"}), 400
+    q = """
+    query Project($id: String!) {
+      project(id: $id) {
+        id
+        name
+        services {
+          edges {
+            node {
+              id
+              name
+              serviceInstances {
+                edges {
+                  node {
+                    id
+                    state
+                    healthcheckStatus
+                    latestDeployment {
+                      id
+                      status
+                      createdAt
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    data, err = railway_gql(q, {"id": RAILWAY_PROJECT_ID})
+    if err:
+        return jsonify({"success": False, "error": err}), 502
+    services = []
+    for edge in data.get("project", {}).get("services", {}).get("edges", []):
+        node = edge.get("node", {})
+        inst = node.get("serviceInstances", {}).get("edges", [{}])[0].get("node", {})
+        services.append({
+            "id": node.get("id"),
+            "name": node.get("name"),
+            "state": inst.get("state"),
+            "health": inst.get("healthcheckStatus"),
+            "latest_deployment": inst.get("latestDeployment")
+        })
+    return jsonify({"success": True, "services": services})
+
+
+@app.route("/api/railway/logs/<service_name>", methods=["GET"])
+def railway_logs(service_name):
+    """Fetch recent logs for a service by name"""
+    lines = min(int(request.args.get("lines", 100)), 500)
+    service_id, err = _service_id_from_name(service_name)
+    if err:
+        return jsonify({"success": False, "error": err}), 400
+    q = """
+    query ServiceLogs($serviceId: String!, $limit: Int!) {
+      serviceLogs(serviceId: $serviceId, limit: $limit) {
+        messages {
+          message
+          timestamp
+          severity
+        }
+      }
+    }
+    """
+    data, err = railway_gql(q, {"serviceId": service_id, "limit": lines})
+    if err:
+        return jsonify({"success": False, "error": err}), 502
+    messages = data.get("serviceLogs", {}).get("messages", []) if data else []
+    return jsonify({"success": True, "service": service_name, "logs": messages})
+
+
+@app.route("/api/railway/restart/<service_name>", methods=["POST"])
+def railway_restart(service_name):
+    """Restart a service without rebuilding"""
+    instance_id, err = _service_instance_id(service_name)
+    if err:
+        return jsonify({"success": False, "error": err}), 400
+    q = """
+    mutation ServiceInstanceRestart($id: String!) {
+      serviceInstanceRestart(id: $id)
+    }
+    """
+    data, err = railway_gql(q, {"id": instance_id})
+    if err:
+        return jsonify({"success": False, "error": err}), 502
+    return jsonify({"success": True, "service": service_name, "action": "restart"})
+
+
+@app.route("/api/railway/redeploy/<service_name>", methods=["POST"])
+def railway_redeploy(service_name):
+    """Redeploy a service (triggers a new build)"""
+    instance_id, err = _service_instance_id(service_name)
+    if err:
+        return jsonify({"success": False, "error": err}), 400
+    q = """
+    mutation ServiceInstanceDeploy($id: String!) {
+      serviceInstanceDeploy(id: $id)
+    }
+    """
+    data, err = railway_gql(q, {"id": instance_id})
+    if err:
+        return jsonify({"success": False, "error": err}), 502
+    return jsonify({"success": True, "service": service_name, "action": "redeploy"})
+
+
+@app.route("/api/railway/status", methods=["GET"])
+def railway_status():
+    """Project-level health summary"""
+    if not RAILWAY_PROJECT_ID:
+        return jsonify({"success": False, "error": "RAILWAY_PROJECT_ID not configured"}), 400
+    q = """
+    query Project($id: String!) {
+      project(id: $id) {
+        id
+        name
+        services {
+          edges {
+            node {
+              id
+              name
+              serviceInstances {
+                edges {
+                  node {
+                    id
+                    state
+                    healthcheckStatus
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    data, err = railway_gql(q, {"id": RAILWAY_PROJECT_ID})
+    if err:
+        return jsonify({"success": False, "error": err}), 502
+    services = []
+    for edge in data.get("project", {}).get("services", {}).get("edges", []):
+        node = edge.get("node", {})
+        inst = node.get("serviceInstances", {}).get("edges", [{}])[0].get("node", {})
+        services.append({
+            "name": node.get("name"),
+            "state": inst.get("state"),
+            "health": inst.get("healthcheckStatus")
+        })
+    total = len(services)
+    healthy = sum(1 for s in services if s.get("health") == "HEALTHY")
+    return jsonify({"success": True, "total": total, "healthy": healthy, "services": services})
+
+
+# ── Init ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     init_db()

@@ -27,6 +27,15 @@ Set env vars in Railway dashboard:
 - `DATABASE_URL` = (from PostgreSQL)
 - `FLASK_ENV` = `production`
 - `PORT` = `8080`
+- `RAILWAY_API_TOKEN` = (optional — get from Railway dashboard → Account Settings → Tokens)
+- `RAILWAY_PROJECT_ID` = `aa760255-42bb-43f3-84aa-545b89060460`
+
+With `RAILWAY_API_TOKEN` and `RAILWAY_PROJECT_ID` set, the dashboard exposes:
+- `GET /api/railway/services` — list all services with health status
+- `GET /api/railway/logs/<service_name>?lines=100` — fetch logs
+- `POST /api/railway/restart/<service_name>` — restart without rebuild
+- `POST /api/railway/redeploy/<service_name>` — trigger new deployment
+- `GET /api/railway/status` — project health summary
 
 ---
 

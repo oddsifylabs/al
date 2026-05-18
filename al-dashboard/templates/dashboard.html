@@ -105,6 +105,27 @@
     .chat-btn:hover { opacity:0.85; }
 
     .loading { opacity:0.6; pointer-events:none; }
+
+    /* Railway Panel */
+    .railway-panel { margin-top:20px; }
+    .railway-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+    .railway-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; }
+    .railway-card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .railway-name { font-weight:700; font-size:13px; }
+    .railway-state { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; text-transform:uppercase; }
+    .state-healthy { background:rgba(0,214,143,0.12); color:var(--success); }
+    .state-unhealthy { background:rgba(255,71,87,0.12); color:var(--error); }
+    .state-unknown { background:rgba(255,255,255,0.06); color:var(--text-secondary); }
+    .railway-actions { display:flex; gap:6px; flex-wrap:wrap; }
+    .railway-actions button { background:var(--surface-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:5px 10px; font-size:11px; font-weight:600; cursor:pointer; transition:all .15s; }
+    .railway-actions button:hover { border-color:var(--accent); color:var(--accent); }
+    .railway-logs { margin-top:10px; max-height:120px; overflow-y:auto; background:var(--void); border-radius:6px; padding:8px; font-size:11px; font-family:monospace; color:var(--text-secondary); border:1px solid var(--border); display:none; }
+    .railway-logs.visible { display:block; }
+    .railway-logs .log-line { margin-bottom:4px; }
+    .railway-logs .log-time { color:var(--text-tertiary); margin-right:6px; }
+    .railway-logs .log-sev-error { color:var(--error); }
+    .railway-logs .log-sev-warn { color:var(--warning); }
+    .railway-err { color:var(--error); font-size:12px; padding:10px; }
   </style>
 </head>
 <body>
@@ -182,6 +203,16 @@
             <input type="text" class="chat-input" id="chat-input" placeholder="What do you need done?" autocomplete="off">
             <button type="submit" class="chat-btn">Send</button>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Railway Ops -->
+    <div class="railway-panel panel">
+      <div class="panel-header">Railway Infrastructure <span id="railway-status-dot" style="font-size:11px; color:var(--text-tertiary);">loading…</span></div>
+      <div class="panel-body">
+        <div class="railway-grid" id="railway-grid">
+          <div style="color:var(--text-tertiary); font-size:12px;">Railway integration requires RAILWAY_API_TOKEN to be configured.</div>
         </div>
       </div>
     </div>
@@ -334,9 +365,94 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    // ── Boot ───────────────────────────────────────────────────────────
+    // ── Railway Ops ──────────────────────────────────────────────────────────
+    async function loadRailway() {
+      try {
+        const r = await fetch('/api/railway/services');
+        const d = await r.json();
+        const grid = document.getElementById('railway-grid');
+        const dot = document.getElementById('railway-status-dot');
+        if (!d.success) {
+          grid.innerHTML = `<div class="railway-err">Railway: ${escapeHtml(d.error || 'unknown error')}</div>`;
+          dot.textContent = 'offline';
+          dot.style.color = 'var(--error)';
+          return;
+        }
+        grid.innerHTML = '';
+        const svcs = d.services || [];
+        let healthy = 0, total = svcs.length;
+        svcs.forEach(s => {
+          if (s.health === 'HEALTHY') healthy++;
+          const stateClass = s.health === 'HEALTHY' ? 'state-healthy' : (s.health === 'UNHEALTHY' ? 'state-unhealthy' : 'state-unknown');
+          const stateLabel = s.health === 'HEALTHY' ? 'Healthy' : (s.health === 'UNHEALTHY' ? 'Unhealthy' : (s.state || 'Unknown'));
+          const card = document.createElement('div');
+          card.className = 'railway-card';
+          card.innerHTML = `
+            <div class="railway-card-header">
+              <span class="railway-name">${escapeHtml(s.name)}</span>
+              <span class="railway-state ${stateClass}">${stateLabel}</span>
+            </div>
+            <div class="railway-actions">
+              <button onclick="railwayAction('restart','${escapeHtml(s.name)}')">↻ Restart</button>
+              <button onclick="railwayAction('redeploy','${escapeHtml(s.name)}')">↑ Redeploy</button>
+              <button onclick="railwayLogs('${escapeHtml(s.name)}',this)">Logs</button>
+            </div>
+            <div class="railway-logs" id="logs-${s.name}"></div>
+          `;
+          grid.appendChild(card);
+        });
+        dot.textContent = `${healthy}/${total} healthy`;
+        dot.style.color = healthy === total && total > 0 ? 'var(--success)' : 'var(--warning)';
+      } catch (e) { console.error('railway', e); }
+    }
+
+    async function railwayAction(action, serviceName) {
+      if (!confirm(`${action} ${serviceName}?`)) return;
+      try {
+        const r = await fetch(`/api/railway/${action}/${serviceName}`, {method:'POST'});
+        const d = await r.json();
+        alert(d.success ? `${action} initiated for ${serviceName}` : `Error: ${d.error}`);
+      } catch (e) { alert('Connection error'); }
+    }
+
+    async function railwayLogs(serviceName, btn) {
+      const el = document.getElementById('logs-' + serviceName);
+      if (el.classList.contains('visible')) {
+        el.classList.remove('visible');
+        btn.textContent = 'Logs';
+        return;
+      }
+      btn.textContent = 'Loading...';
+      try {
+        const r = await fetch(`/api/railway/logs/${serviceName}?lines=50`);
+        const d = await r.json();
+        el.innerHTML = '';
+        if (!d.success) {
+          el.innerHTML = `<div class="railway-err">${escapeHtml(d.error)}</div>`;
+        } else if (!d.logs || d.logs.length === 0) {
+          el.innerHTML = '<div style="color:var(--text-tertiary)">No logs.</div>';
+        } else {
+          d.logs.forEach(l => {
+            const sev = (l.severity || '').toLowerCase();
+            const sevClass = sev.includes('error') ? 'log-sev-error' : (sev.includes('warn') ? 'log-sev-warn' : '');
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.innerHTML = `<span class="log-time">${l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : ''}</span><span class="${sevClass}">${escapeHtml(l.message)}</span>`;
+            el.appendChild(line);
+          });
+        }
+        el.classList.add('visible');
+        btn.textContent = 'Hide';
+      } catch (e) {
+        el.innerHTML = '<div class="railway-err">Failed to load logs</div>';
+        el.classList.add('visible');
+        btn.textContent = 'Hide';
+      }
+    }
+
+    // ── Boot ──────────────────────────────────────────────────────────
     async function refresh() {
-      await Promise.all([loadStats(), loadWorkers(), loadTasks()]);
+      await Promise.all([loadStats(), loadWorkers(), loadTasks(), loadRailway()]);
     }
 
     refresh();
