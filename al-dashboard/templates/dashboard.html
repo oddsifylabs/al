@@ -1,82 +1,346 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Al Dashboard — Autonomous Labor Command Hub</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AL Workforce Hub | Oddsify Labs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --void: #0a0a0f;
+      --surface: #12121a;
+      --surface-hover: #1a1a25;
+      --text: #fafafa;
+      --text-secondary: #a0a0b0;
+      --text-tertiary: #6a6a7a;
+      --border: rgba(255,255,255,0.08);
+      --accent: #4dd0ff;
+      --accent-dim: rgba(77,208,255,0.08);
+      --success: #00d68f;
+      --warning: #ffb020;
+      --error: #ff4757;
+      --info: #5375f9;
+      --role-manager: #a855f7;
+      --role-coder: #3b82f6;
+      --role-web: #06b6d4;
+      --role-admin: #f59e0b;
+      --role-marketing: #ec4899;
+      --role-social: #8b5cf6;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',sans-serif; font-size:14px; color:var(--text); background:var(--void); line-height:1.5; min-height:100vh; }
+
+    .app { max-width:1600px; margin:0 auto; padding:24px; }
+
+    /* Header */
+    .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .brand-logo { width:36px; height:36px; background:linear-gradient(135deg,var(--accent),var(--info)); border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:16px; color:var(--void); }
+    .brand-name { font-size:18px; font-weight:700; }
+    .brand-sub { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.08em; }
+
+    /* Stats */
+    .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:24px; }
+    .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; text-align:center; transition:all .2s; }
+    .stat-card:hover { border-color:var(--accent); }
+    .stat-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; }
+    .stat-value { font-size:28px; font-weight:800; }
+    .stat-value.pending { color:var(--warning); }
+    .stat-value.todo { color:var(--text); }
+    .stat-value.progress { color:var(--info); }
+    .stat-value.blocked { color:var(--error); }
+    .stat-value.review { color:var(--role-admin); }
+    .stat-value.done { color:var(--success); }
+
+    /* Layout */
+    .main { display:grid; grid-template-columns:280px 1fr 320px; gap:20px; }
+    @media(max-width:1200px){ .main { grid-template-columns:1fr; } }
+
+    /* Panels */
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .panel-header { padding:14px 16px; border-bottom:1px solid var(--border); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-secondary); display:flex; align-items:center; justify-content:space-between; }
+    .panel-body { padding:16px; }
+
+    /* Workers Sidebar */
+    .worker-item { display:flex; align-items:center; gap:10px; padding:10px; border-radius:8px; margin-bottom:6px; cursor:pointer; transition:all .15s; }
+    .worker-item:hover { background:var(--surface-hover); }
+    .worker-avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; color:#fff; flex-shrink:0; }
+    .worker-info { flex:1; min-width:0; }
+    .worker-name { font-weight:600; font-size:13px; }
+    .worker-role { font-size:11px; color:var(--text-tertiary); }
+    .worker-status { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .worker-status.online { background:var(--success); box-shadow:0 0 6px var(--success); }
+    .worker-status.offline { background:var(--error); }
+    .worker-status.unknown { background:var(--text-tertiary); }
+
+    /* Kanban */
+    .kanban { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    @media(max-width:900px){ .kanban { grid-template-columns:1fr; } }
+    .kanban-col { background:rgba(255,255,255,0.02); border-radius:10px; padding:12px; min-height:300px; }
+    .kanban-col-header { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-secondary); margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; }
+    .kanban-col-header .count { background:var(--surface-hover); padding:2px 8px; border-radius:999px; font-size:11px; }
+    .task-card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; cursor:pointer; transition:all .15s; }
+    .task-card:hover { border-color:var(--accent); transform:translateY(-1px); }
+    .task-title { font-weight:600; font-size:13px; margin-bottom:6px; line-height:1.4; }
+    .task-meta { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-tertiary); }
+    .task-badge { padding:2px 8px; border-radius:999px; font-size:10px; font-weight:600; text-transform:uppercase; }
+    .badge-pending { background:rgba(255,176,32,0.12); color:var(--warning); }
+    .badge-todo { background:rgba(250,250,250,0.06); color:var(--text-secondary); }
+    .badge-progress { background:rgba(83,117,249,0.12); color:var(--info); }
+    .badge-blocked { background:rgba(255,71,87,0.12); color:var(--error); }
+    .badge-review { background:rgba(245,158,11,0.12); color:var(--role-admin); }
+    .badge-done { background:rgba(0,214,143,0.12); color:var(--success); }
+
+    /* Chat */
+    .chat-messages { height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+    .msg { max-width:85%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.5; }
+    .msg.user { align-self:flex-end; background:var(--accent); color:var(--void); font-weight:500; }
+    .msg.al { align-self:flex-start; background:var(--surface-hover); border:1px solid var(--border); }
+    .msg.system { align-self:center; color:var(--text-tertiary); font-size:12px; font-style:italic; }
+    .chat-form { display:flex; gap:8px; }
+    .chat-input { flex:1; background:var(--void); border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-size:13px; outline:none; }
+    .chat-input:focus { border-color:var(--accent); }
+    .chat-btn { background:var(--accent); color:var(--void); border:none; border-radius:8px; padding:0 18px; font-weight:700; font-size:13px; cursor:pointer; transition:opacity .15s; }
+    .chat-btn:hover { opacity:0.85; }
+
+    .loading { opacity:0.6; pointer-events:none; }
+  </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>🤖 Al Dashboard</h1>
-            <p class="subtitle">Autonomous Labor Command Hub</p>
+  <div class="app">
+    <!-- Header -->
+    <div class="header">
+      <div class="brand">
+        <div class="brand-logo">AL</div>
+        <div>
+          <div class="brand-name">Autonomous Labor</div>
+          <div class="brand-sub">Oddsify Labs Workforce Hub</div>
         </div>
-    </header>
+      </div>
+      <div style="color:var(--text-secondary); font-size:12px;">
+        Dashboard → Jed → Workers → Railway Internal Network
+      </div>
+    </div>
 
-    <main class="container">
-        <!-- Stats Overview -->
-        <section class="stats-grid">
-            <div class="stat-card">
-                <h3>Total Tasks</h3>
-                <div class="stat-value" id="total-tasks">-</div>
-            </div>
-            <div class="stat-card">
-                <h3>To Do</h3>
-                <div class="stat-value todo" id="todo-tasks">-</div>
-            </div>
-            <div class="stat-card">
-                <h3>In Progress</h3>
-                <div class="stat-value in-progress" id="progress-tasks">-</div>
-            </div>
-            <div class="stat-card">
-                <h3>Done</h3>
-                <div class="stat-value done" id="done-tasks">-</div>
-            </div>
-        </section>
+    <!-- Stats -->
+    <div class="stats" id="stats-row">
+      <div class="stat-card"><div class="stat-label">Pending Review</div><div class="stat-value pending" id="stat-pending">0</div></div>
+      <div class="stat-card"><div class="stat-label">To Do</div><div class="stat-value todo" id="stat-todo">0</div></div>
+      <div class="stat-card"><div class="stat-label">In Progress</div><div class="stat-value progress" id="stat-progress">0</div></div>
+      <div class="stat-card"><div class="stat-label">Blocked</div><div class="stat-value blocked" id="stat-blocked">0</div></div>
+      <div class="stat-card"><div class="stat-label">Review</div><div class="stat-value review" id="stat-review">0</div></div>
+      <div class="stat-card"><div class="stat-label">Done</div><div class="stat-value done" id="stat-done">0</div></div>
+    </div>
 
-        <div class="dashboard-grid">
-            <!-- Chat Interface -->
-            <section class="chat-panel">
-                <h2>💬 Chat with Al</h2>
-                <div class="chat-messages" id="chat-messages">
-                    <div class="message system">
-                        <p>Welcome to Al Dashboard! Ask Al to manage your workforce.</p>
-                    </div>
-                </div>
-                <form class="chat-input" id="chat-form">
-                    <input type="text" id="chat-message" placeholder="Tell Al what you need..." required>
-                    <button type="submit">Send</button>
-                </form>
-            </section>
+    <!-- Main Grid -->
+    <div class="main">
+      <!-- Workers Sidebar -->
+      <div class="panel">
+        <div class="panel-header">Workers <span id="worker-count">0</span></div>
+        <div class="panel-body" id="worker-list"></div>
+      </div>
 
-            <!-- Kanban Board -->
-            <section class="kanban-panel">
-                <h2>📋 Task Board</h2>
-                <div class="kanban-board">
-                    <div class="kanban-column">
-                        <h3>To Do</h3>
-                        <div class="task-list" id="todo-column"></div>
-                    </div>
-                    <div class="kanban-column">
-                        <h3>In Progress</h3>
-                        <div class="task-list" id="progress-column"></div>
-                    </div>
-                    <div class="kanban-column">
-                        <h3>Done</h3>
-                        <div class="task-list" id="done-column"></div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Worker Status -->
-            <section class="workers-panel">
-                <h2>👥 Workers</h2>
-                <div class="worker-list" id="worker-list"></div>
-            </section>
+      <!-- Kanban -->
+      <div>
+        <div class="kanban">
+          <div class="kanban-col" data-status="pending_review">
+            <div class="kanban-col-header">Pending Review <span class="count" id="col-pending">0</span></div>
+            <div class="task-list" id="col-pending-list"></div>
+          </div>
+          <div class="kanban-col" data-status="todo">
+            <div class="kanban-col-header">To Do <span class="count" id="col-todo">0</span></div>
+            <div class="task-list" id="col-todo-list"></div>
+          </div>
+          <div class="kanban-col" data-status="in_progress">
+            <div class="kanban-col-header">In Progress <span class="count" id="col-progress">0</span></div>
+            <div class="task-list" id="col-progress-list"></div>
+          </div>
+          <div class="kanban-col" data-status="blocked">
+            <div class="kanban-col-header">Blocked <span class="count" id="col-blocked">0</span></div>
+            <div class="task-list" id="col-blocked-list"></div>
+          </div>
+          <div class="kanban-col" data-status="review">
+            <div class="kanban-col-header">Review <span class="count" id="col-review">0</span></div>
+            <div class="task-list" id="col-review-list"></div>
+          </div>
+          <div class="kanban-col" data-status="done">
+            <div class="kanban-col-header">Done <span class="count" id="col-done">0</span></div>
+            <div class="task-list" id="col-done-list"></div>
+          </div>
         </div>
-    </main>
+      </div>
 
-    <script src="/static/js/app.js"></script>
+      <!-- Chat -->
+      <div class="panel" style="display:flex; flex-direction:column; height:520px;">
+        <div class="panel-header">Task Inbox</div>
+        <div class="panel-body" style="flex:1; display:flex; flex-direction:column; padding:12px;">
+          <div class="chat-messages" id="chat-messages">
+            <div class="msg system">Send a message to create a task. Jed will review and assign it.</div>
+          </div>
+          <form class="chat-form" id="chat-form">
+            <input type="text" class="chat-input" id="chat-input" placeholder="What do you need done?" autocomplete="off">
+            <button type="submit" class="chat-btn">Send</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Role colors ──────────────────────────────────────────
+    const ROLE_COLORS = {
+      'Manager': 'var(--role-manager)',
+      'Coder': 'var(--role-coder)',
+      'Web Dev': 'var(--role-web)',
+      'Writer/Admin/Research': 'var(--role-admin)',
+      'Sales & Marketing': 'var(--role-marketing)',
+      'Social Media': 'var(--role-social)'
+    };
+
+    const STATUS_BADGES = {
+      'pending_review': 'badge-pending',
+      'todo': 'badge-todo',
+      'in_progress': 'badge-progress',
+      'blocked': 'badge-blocked',
+      'review': 'badge-review',
+      'done': 'badge-done'
+    };
+
+    // ── Load Stats ─────────────────────────────────────────────
+    async function loadStats() {
+      try {
+        const r = await fetch('/api/stats');
+        const d = await r.json();
+        if (!d.success) return;
+        const s = d.stats;
+        document.getElementById('stat-pending').textContent = s.pending_review;
+        document.getElementById('stat-todo').textContent = s.todo;
+        document.getElementById('stat-progress').textContent = s.in_progress;
+        document.getElementById('stat-blocked').textContent = s.blocked;
+        document.getElementById('stat-review').textContent = s.review;
+        document.getElementById('stat-done').textContent = s.done;
+      } catch (e) { console.error('stats', e); }
+    }
+
+    // ── Load Workers ────────────────────────────────────────────
+    async function loadWorkers() {
+      try {
+        const r = await fetch('/api/workers');
+        const d = await r.json();
+        if (!d.success) return;
+        const list = document.getElementById('worker-list');
+        list.innerHTML = '';
+        d.workers.forEach(w => {
+          const color = ROLE_COLORS[w.role] || 'var(--text-tertiary)';
+          const item = document.createElement('div');
+          item.className = 'worker-item';
+          item.innerHTML = `
+            <div class="worker-avatar" style="background:${color}">${w.name[0]}</div>
+            <div class="worker-info">
+              <div class="worker-name">${w.name}</div>
+              <div class="worker-role">${w.role}${w.telegram ? ' · ' + w.telegram : ''}</div>
+            </div>
+            <div class="worker-status ${w.status}"></div>
+          `;
+          list.appendChild(item);
+        });
+        document.getElementById('worker-count').textContent = d.workers.length;
+      } catch (e) { console.error('workers', e); }
+    }
+
+    // ── Load Tasks (Kanban) ────────────────────────────────────────
+    async function loadTasks() {
+      try {
+        const r = await fetch('/api/tasks');
+        const d = await r.json();
+        if (!d.success) return;
+
+        // Clear columns
+        ['pending','todo','progress','blocked','review','done'].forEach(st => {
+          document.getElementById('col-' + st + '-list').innerHTML = '';
+          document.getElementById('col-' + st).textContent = '0';
+        });
+
+        const counts = {pending_review:0, todo:0, in_progress:0, blocked:0, review:0, done:0};
+
+        d.tasks.forEach(t => {
+          const st = t.status;
+          counts[st] = (counts[st] || 0) + 1;
+          const listId = st === 'pending_review' ? 'col-pending-list' :
+                         st === 'in_progress' ? 'col-progress-list' : 'col-' + st + '-list';
+          const countId = st === 'pending_review' ? 'col-pending' :
+                          st === 'in_progress' ? 'col-progress' : 'col-' + st;
+
+          const card = document.createElement('div');
+          card.className = 'task-card';
+          const badge = STATUS_BADGES[st] || 'badge-todo';
+          card.innerHTML = `
+            <div class="task-title">${escapeHtml(t.title)}</div>
+            <div class="task-meta">
+              <span class="task-badge ${badge}">${st.replace('_',' ')}</span>
+              <span>${t.assignee || 'Unassigned'}</span>
+            </div>
+          `;
+          document.getElementById(listId).appendChild(card);
+          document.getElementById(countId).textContent = counts[st];
+        });
+      } catch (e) { console.error('tasks', e); }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ── Chat ───────────────────────────────────────────────────────
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const chatMessages = document.getElementById('chat-messages');
+
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = chatInput.value.trim();
+      if (!msg) return;
+
+      addMessage(msg, 'user');
+      chatInput.value = '';
+
+      try {
+        const r = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({message: msg})
+        });
+        const d = await r.json();
+        if (d.success) {
+          addMessage(d.response, 'al');
+          loadStats();
+          loadTasks();
+        } else {
+          addMessage('Error: ' + d.error, 'system');
+        }
+      } catch (err) {
+        addMessage('Connection error', 'system');
+      }
+    });
+
+    function addMessage(text, type) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + type;
+      div.textContent = text;
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // ── Boot ───────────────────────────────────────────────────────────
+    async function refresh() {
+      await Promise.all([loadStats(), loadWorkers(), loadTasks()]);
+    }
+
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
 </body>
 </html>

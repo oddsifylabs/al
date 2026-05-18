@@ -1,181 +1,128 @@
-# Al — Autonomous Labor Command Hub
+# AL — Autonomous Labor Workforce Hub
 
 **Your AI-powered digital workforce orchestrator.**
 
-Al is a Manager + Specialist agent system that lets you build, deploy, and scale autonomous AI workers for any task. Decompose complex projects, assign to specialist agents, track progress via Kanban, and get results — all through a unified web dashboard or Telegram.
+AL is a Manager + Specialist agent system that lets you build, deploy, and scale autonomous AI workers. You task the Manager (Jed) through a web dashboard, he decomposes projects into subtasks, assigns them to specialist workers, and tracks progress via a live Kanban board — all hosted on Railway.
 
 ---
 
-## 🚀 Quick Start
+## 🎯 Architecture
+
+```
+You → Dashboard Chat → Kanban DB (PostgreSQL)
+                          ↓
+                   Jed polls every 30s
+                          ↓
+              Decomposes → Assigns subtasks
+                          ↓
+              Workers poll every 30s
+                          ↓
+              Execute → Report progress → Done
+```
+
+All services communicate over Railway's private internal network.
+
+---
+
+## 📚 Task Lifecycle
+
+| Status | Meaning |
+|--------|---------|
+| `pending_review` | You submitted a task via chat. Jed hasn't seen it yet. |
+| `todo` | Jed created/assigned a subtask. Waiting for worker. |
+| `in_progress` | Worker picked up the task and is executing. |
+| `blocked` | Worker hit an issue and needs help. |
+| `review` | Worker finished. Waiting for Jed/your approval. |
+| `done` | Approved and complete. |
+
+---
+
+## 📡 Railway Services
+
+| Service | Role | Internal URL |
+|---------|------|-------------|
+| `al-dashboard` | Web UI + Kanban API + PostgreSQL | `al-dashboard.railway.internal` |
+| `jed-manager` | Task decomposition & assignment | `jed---the-manager.railway.internal` |
+| `ruth-worker` | Coder | `hermes-agent-edcb.railway.internal` |
+| `ms-anderson-worker` | Web Dev | `hermes-agent-14cf.railway.internal` |
+| `octavia-worker` | Writer/Admin/Research | `hermes-agent.railway.internal` |
+| `mitch-worker` | Sales & Marketing | `hermes-agent-7a4a.railway.internal` |
+| `malcom-worker` | Social Media | `hermes-agent-3940.railway.internal` |
+
+---
+
+## 🚀 Quick Start (Local)
 
 ```bash
-# Deploy Manager agent
+# 1. Clone
 git clone https://github.com/oddsifylabs/al
-cd al/al-manager
+cd al
+
+# 2. Start the stack
+cd al-deploy/docker
 docker-compose up -d
 
-# Add your first worker
-cd ../al-workers
-./add-worker.sh coder
-
-# Access dashboard
+# 3. Open dashboard
 open http://localhost:8080
 ```
 
 ---
 
-## ✨ Features
+## 🚀 Deploy to Railway
 
-### For Managers
-- **Natural Language Tasking** — Tell Al what you need in plain English
-- **Auto-Decomposition** — Al breaks projects into tasks automatically
-- **Kanban Board** — Visual task tracking with dependencies
-- **Multi-Agent Orchestration** — Coordinate 10+ workers simultaneously
-- **Telegram Integration** — Command your workforce from anywhere
+1. Add a **PostgreSQL** database in your Railway project
+2. Deploy `al-dashboard` service (root `Dockerfile`)
+3. Set `DATABASE_URL` env var from Railway PostgreSQL
+4. Deploy `jed-manager` service from `al-manager/Dockerfile`
+5. Deploy each worker from `al-workers/Dockerfile` with `WORKER_ID` set
+6. All services auto-connect via Railway internal DNS
 
-### For Workers
-- **Specialist Templates** — Pre-built workers for coding, writing, marketing, etc.
-- **Custom Worker SDK** — Build your own specialist agents
-- **Auto-Scaling** — Workers run on Railway, Docker, or local machines
-- **Memory & Context** — Workers remember past tasks and learn from experience
-
-### For Teams
-- **Web Dashboard** — Real-time view of all active tasks
-- **Role-Based Access** — Different permissions for different team members
-- **Audit Trail** — Full history of all worker actions
-- **API Access** — Integrate Al into your existing tools
+See [DEPLOY.md](DEPLOY.md) for detailed steps.
 
 ---
 
-## 🏗 Architecture
+## 📁 Structure
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Web Dashboard                        │
-│  Chat with Al | Kanban Board | Worker Status           │
-└─────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│              Al Manager (Orchestrator)                  │
-│  • Receives tasks                                       │
-│  • Decomposes into subtasks                             │
-│  • Assigns to workers                                   │
-│  • Tracks progress                                      │
-│  • Reports results                                      │
-└─────────────────────────────────────────────────────────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        │                 │                 │
-        ▼                 ▼                 ▼
-   ┌──────────┐     ┌──────────┐     ┌──────────┐
-   │  Coder   │     │  Writer  │     │ Marketing│
-   │  Worker  │     │  Worker  │     │  Worker  │
-   └──────────┘     └──────────┘     └──────────┘
+al/
+├── al-dashboard/          # Central hub (Flask + PostgreSQL + UI)
+│   ├── app.py
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── templates/
+│       └── dashboard.html
+├── al-manager/            # Jed Hermes poller
+│   ├── jed-poller.py
+│   └── Dockerfile
+├── al-workers/            # Worker poller template
+│   ├── worker-poller.py
+│   └── Dockerfile
+├── al-deploy/
+│   └── docker/
+│       └── docker-compose.yml
+├── railway.json
+└── README.md
 ```
 
 ---
 
-## 📦 Components
+## 🔧 Environment Variables
 
-| Component | Description |
-|-----------|-------------|
-| `al-manager` | The orchestrator agent (Hermes profile) |
-| `al-workers` | Specialist worker templates |
-| `al-dashboard` | Web GUI (Flask + React) |
-| `al-sdk` | Build custom workers |
-| `al-deploy` | Deployment configs (Railway, Docker, K8s) |
+### Dashboard
+- `DATABASE_URL` — PostgreSQL connection string (required)
+- `PORT` — defaults to `8080`
 
----
+### Jed Manager
+- `DASHBOARD_URL` — defaults to `http://al-dashboard:8080`
+- `POLL_INTERVAL` — defaults to `30` (seconds)
 
-## 🛠 Tech Stack
-
-- **Agent Framework:** Hermes Agent (open-source)
-- **LLM Backend:** Ollama (local) or OpenRouter (cloud)
-- **Task Queue:** SQLite Kanban (built-in)
-- **Web Dashboard:** Flask + React
-- **Messaging:** Telegram Bot API
-- **Deployment:** Railway, Docker, Kubernetes-ready
+### Workers
+- `WORKER_ID` — `ruth`, `ms-anderson`, `octavia`, `mitch`, or `malcom` (required)
+- `DASHBOARD_URL` — defaults to `http://al-dashboard:8080`
+- `POLL_INTERVAL` — defaults to `30` (seconds)
 
 ---
 
-## 💡 Use Cases
+## 📜 License
 
-| Use Case | Workers Needed | Example |
-|----------|----------------|---------|
-| **Content Marketing** | Writer + Social + SEO | Blog → Twitter → LinkedIn pipeline |
-| **Software Development** | Coder + Reviewer + Tester | Feature development sprint |
-| **E-commerce Ops** | Support + Marketing + Analytics | Customer service + promotions |
-| **Research & Analysis** | Researcher + Analyst + Writer | Market research reports |
-| **Social Media Management** | Social + Designer + Scheduler | Daily posting across platforms |
-
----
-
-## 🚀 Deployment
-
-### Railway (Recommended)
-```bash
-cd al-deploy/railway
-railway up
-```
-
-### Docker (Local)
-```bash
-cd al-deploy/docker
-docker-compose up -d
-```
-
-### Kubernetes (Enterprise)
-```bash
-kubectl apply -f al-deploy/k8s/
-```
-
----
-
-## 📖 Documentation
-
-- [Architecture Guide](docs/architecture.md)
-- [Deployment Guide](docs/deployment.md)
-- [Worker SDK](docs/worker-sdk.md)
-- [API Reference](docs/api.md)
-- [Telegram Setup](docs/telegram.md)
-
----
-
-## 💰 Pricing (Coming Soon)
-
-| Tier | Workers | Features | Price |
-|------|---------|----------|-------|
-| **Free** | 3 | Basic Kanban, Telegram only | $0/mo |
-| **Pro** | 10 | Web Dashboard, Custom Workers | $29/mo |
-| **Team** | 50 | API Access, Priority Support | $99/mo |
-| **Enterprise** | Unlimited | White-label, On-prem | Custom |
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-## 🌟 Roadmap
-
-- [ ] Multi-tenant support
-- [ ] Worker marketplace (buy/sell custom workers)
-- [ ] Advanced analytics dashboard
-- [ ] Slack/Discord integrations
-- [ ] Voice commands (STT/TTS)
-- [ ] Mobile app (iOS/Android)
-
----
-
-**Built with ❤️ by Oddsify Labs**
-
-[Website](https://oddsifylabs.com) | [Twitter](https://twitter.com/OddsifyLabs) | [Discord](https://discord.gg/oddsify)
+MIT — Oddsify Labs

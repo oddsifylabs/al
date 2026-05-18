@@ -1,159 +1,437 @@
 #!/usr/bin/env python3
 """
-Al Dashboard — Web GUI for Autonomous Labor Command Hub
+AL Dashboard — Central Worker Hub for Oddsify Labs
+PostgreSQL-backed task router, Kanban API, and web UI
 """
 
-from flask import Flask, render_template, jsonify, request
-import sqlite3
 import os
+import json
+import uuid
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
+from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
-# Configuration
-HERMES_HOME = os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))
-AL_MANAGER_PROFILE = os.environ.get('AL_MANAGER_PROFILE', 'al-manager')
-KANBAN_DB = os.path.join(HERMES_HOME, 'profiles', AL_MANAGER_PROFILE, 'kanban.db')
+# ── Config ──────────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL env var required")
 
-@app.route('/')
+# Railway internal URLs for workers
+WORKERS = {
+    "jed": {"name": "Jed Hermes", "role": "Manager", "tg": "@jedhermesbot", "url": "http://jed---the-manager.railway.internal"},
+    "ruth": {"name": "Ruth Hermes", "role": "Coder", "tg": "", "url": "http://hermes-agent-edcb.railway.internal"},
+    "ms-anderson": {"name": "Ms. Anderson", "role": "Web Dev", "tg": "@MsAndersonBOT", "url": "http://hermes-agent-14cf.railway.internal"},
+    "octavia": {"name": "Octavia Hermes", "role": "Writer/Admin/Research", "tg": "@OctaviaHermesBot", "url": "http://hermes-agent.railway.internal"},
+    "mitch": {"name": "Mitch Hermes", "role": "Sales & Marketing", "tg": "@MitchHermes_Bot", "url": "http://hermes-agent-7a4a.railway.internal"},
+    "malcom": {"name": "Malcom Hermes", "role": "Social Media", "tg": "@MalcomSMMBot", "url": "http://hermes-agent-3940.railway.internal"},
+}
+
+# ── DB Helpers ──────────────────────────────────────────────────────
+def get_db():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+def init_db():
+    """Create tables if they don't exist"""
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id              TEXT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            body            TEXT,
+            assignee        TEXT,
+            status          TEXT NOT NULL DEFAULT 'pending_review',
+            priority        INTEGER DEFAULT 0,
+            created_by      TEXT DEFAULT 'dashboard',
+            created_at      TIMESTAMP DEFAULT NOW(),
+            started_at      TIMESTAMP,
+            completed_at    TIMESTAMP,
+            parent_id       TEXT,
+            result          TEXT,
+            progress_notes  TEXT,
+            worker_url      TEXT,
+            FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS task_events (
+            id          SERIAL PRIMARY KEY,
+            task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            actor       TEXT NOT NULL,
+            event       TEXT NOT NULL,
+            note        TEXT,
+            created_at  TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS worker_heartbeat (
+            worker_id   TEXT PRIMARY KEY,
+            status      TEXT DEFAULT 'unknown',
+            last_seen   TIMESTAMP DEFAULT NOW(),
+            task_count  INTEGER DEFAULT 0
+        )
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("[DB] Initialized")
+
+
+# ── Routes ──────────────────────────────────────────────────────────
+
+@app.route("/")
 def dashboard():
-    """Main dashboard view"""
-    return render_template('dashboard-modern.html')
+    return render_template("dashboard.html")
 
-@app.route('/health')
+
+@app.route("/health")
 def health():
-    """Health check endpoint for Docker"""
-    return jsonify({'status': 'healthy', 'service': 'al-dashboard'}), 200
-
-@app.route('/api/tasks', methods=['GET'])
-def get_tasks():
-    """Get all Kanban tasks from Hermes Kanban API"""
-    import requests
-    
-    # Use Kanban API URL from env var or default to Railway internal URL
-    kanban_api_url = os.environ.get('KANBAN_API_URL', 'http://hermes-kanban-api.railway.internal:8080')
-    
     try:
-        # Fetch tasks from Kanban API via internal Railway network
-        response = requests.get(f'{kanban_api_url}/api/tasks', timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('success'):
-                return jsonify(data)
+        conn = get_db()
+        conn.close()
+        return jsonify({"status": "healthy", "service": "al-dashboard"}), 200
     except Exception as e:
-        pass
-    
-    # Fallback: return empty list if API is unavailable
-    return jsonify({'success': True, 'tasks': [], 'source': 'Hermes Kanban API - Unavailable'})
+        return jsonify({"status": "unhealthy", "error": str(e)}), 503
 
-@app.route('/api/tasks', methods=['POST'])
+
+# ── Tasks ───────────────────────────────────────────────────────────
+
+@app.route("/api/tasks", methods=["GET"])
+def list_tasks():
+    """Get all tasks, optionally filtered by status or assignee"""
+    status = request.args.get("status")
+    assignee = request.args.get("assignee")
+    parent_only = request.args.get("parent_only", "false").lower() == "true"
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    query = "SELECT * FROM tasks WHERE 1=1"
+    params = []
+
+    if status:
+        query += " AND status = %s"
+        params.append(status)
+    if assignee:
+        query += " AND assignee = %s"
+        params.append(assignee)
+    if parent_only:
+        query += " AND parent_id IS NULL"
+
+    query += " ORDER BY created_at DESC"
+
+    cur.execute(query, params)
+    tasks = cur.fetchall()
+
+    # Convert to dict and fetch children for each
+    result = []
+    for t in tasks:
+        task = dict(t)
+        cur.execute("SELECT * FROM tasks WHERE parent_id = %s ORDER BY created_at", [task["id"]])
+        task["subtasks"] = [dict(row) for row in cur.fetchall()]
+        result.append(task)
+
+    cur.close()
+    conn.close()
+    return jsonify({"success": True, "tasks": result})
+
+
+@app.route("/api/tasks", methods=["POST"])
 def create_task():
-    """Create new task via Al Manager"""
-    data = request.json
-    # This would integrate with Hermes to create task via kanban_create
-    # For now, return placeholder
+    """Create a new task (from chat or external)"""
+    data = request.json or {}
+    task_id = data.get("id") or f"task_{uuid.uuid4().hex[:8]}"
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, parent_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        task_id,
+        data.get("title", "Untitled"),
+        data.get("body", ""),
+        data.get("assignee"),
+        data.get("status", "pending_review"),
+        data.get("priority", 0),
+        data.get("created_by", "dashboard"),
+        data.get("parent_id")
+    ))
+
+    cur.execute("""
+        INSERT INTO task_events (task_id, actor, event, note)
+        VALUES (%s, %s, %s, %s)
+    """, (task_id, data.get("created_by", "dashboard"), "created", data.get("body", "")))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True, "task": {"id": task_id, "status": "pending_review"}}), 201
+
+
+@app.route("/api/tasks/<task_id>", methods=["GET"])
+def get_task(task_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tasks WHERE id = %s", [task_id])
+    task = cur.fetchone()
+    if not task:
+        return jsonify({"success": False, "error": "Not found"}), 404
+
+    cur.execute("SELECT * FROM task_events WHERE task_id = %s ORDER BY created_at", [task_id])
+    events = [dict(row) for row in cur.fetchall()]
+
+    cur.execute("SELECT * FROM tasks WHERE parent_id = %s ORDER BY created_at", [task_id])
+    subtasks = [dict(row) for row in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+
+    t = dict(task)
+    t["events"] = events
+    t["subtasks"] = subtasks
+    return jsonify({"success": True, "task": t})
+
+
+@app.route("/api/tasks/<task_id>/update", methods=["POST"])
+def update_task(task_id):
+    """Workers call this to report progress/status changes"""
+    data = request.json or {}
+    new_status = data.get("status")
+    progress = data.get("progress_notes")
+    result = data.get("result")
+    actor = data.get("actor", "worker")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Build dynamic update
+    fields = []
+    params = []
+    if new_status:
+        fields.append("status = %s")
+        params.append(new_status)
+        if new_status == "in_progress":
+            fields.append("started_at = NOW()")
+        if new_status in ("done", "review"):
+            fields.append("completed_at = NOW()")
+    if progress:
+        fields.append("progress_notes = COALESCE(progress_notes, '') || %s")
+        params.append(f"\n[{datetime.now().isoformat()}] {progress}")
+    if result:
+        fields.append("result = %s")
+        params.append(result)
+
+    if not fields:
+        return jsonify({"success": False, "error": "No fields to update"}), 400
+
+    params.append(task_id)
+    cur.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id = %s", params)
+
+    if cur.rowcount == 0:
+        return jsonify({"success": False, "error": "Task not found"}), 404
+
+    # Log event
+    event_note = progress or result or f"Status changed to {new_status}"
+    cur.execute("""
+        INSERT INTO task_events (task_id, actor, event, note)
+        VALUES (%s, %s, %s, %s)
+    """, (task_id, actor, new_status or "update", event_note))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True, "task_id": task_id})
+
+
+@app.route("/api/tasks/assigned/<worker_id>", methods=["GET"])
+def get_assigned_tasks(worker_id):
+    """Worker pollers call this to get their queue"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM tasks
+        WHERE assignee = %s AND status IN ('todo', 'in_progress', 'blocked')
+        ORDER BY priority DESC, created_at ASC
+    """, [worker_id])
+    tasks = [dict(row) for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify({"success": True, "worker": worker_id, "tasks": tasks})
+
+
+@app.route("/api/tasks/pending-review", methods=["GET"])
+def get_pending_review():
+    """Jed calls this to see new tasks from you"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM tasks
+        WHERE status = 'pending_review' AND parent_id IS NULL
+        ORDER BY created_at ASC
+    """)
+    tasks = [dict(row) for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify({"success": True, "tasks": tasks})
+
+
+# ── Chat / Inbox ────────────────────────────────────────────────────
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """Your messages from the dashboard create pending_review tasks"""
+    data = request.json or {}
+    message = data.get("message", "").strip()
+    if not message:
+        return jsonify({"success": False, "error": "No message"}), 400
+
+    task_id = f"task_{uuid.uuid4().hex[:8]}"
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO tasks (id, title, body, status, created_by)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (task_id, message[:120], message, "pending_review", "director"))
+
+    cur.execute("""
+        INSERT INTO task_events (task_id, actor, event, note)
+        VALUES (%s, %s, %s, %s)
+    """, (task_id, "director", "chat_created", message))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
     return jsonify({
-        'success': True,
-        'message': 'Task creation requires Hermes integration',
-        'task': data
+        "success": True,
+        "task_id": task_id,
+        "message": "Task created and sent to Jed for review",
+        "response": "📋 Task logged. Jed will decompose and assign shortly."
     })
 
-@app.route('/api/workers', methods=['GET'])
-def get_workers():
-    """Get list of AL workforce members"""
-    # AL workforce deployed on Railway
-    # All workers are assumed online since they're deployed as Railway services
-    workers = [
-        {'name': 'Jed', 'profile': 'jed-hermes', 'role': 'Manager/Orchestrator', 'status': 'online', 'service': 'jed---the-manager'},
-        {'name': 'Ruth', 'profile': 'ruth-hermes', 'role': 'Coder', 'status': 'online', 'service': 'hermes-agent-edcb'},
-        {'name': 'Ms. Anderson', 'profile': 'ms-anderson', 'role': 'Web Dev', 'status': 'online', 'service': 'hermes-agent-14cf'},
-        {'name': 'Octavia', 'profile': 'octavia-hermes', 'role': 'Admin/Writer', 'status': 'online', 'service': 'hermes-agent'},
-        {'name': 'Mitch', 'profile': 'mitch-hermes', 'role': 'Marketing/Sales', 'status': 'online', 'service': 'hermes-agent-7a4a'},
-        {'name': 'Malcom', 'profile': 'malcom-hermes', 'role': 'Social Media', 'status': 'online', 'service': 'hermes-agent-3940'},
-    ]
-    return jsonify({'success': True, 'workers': workers})
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """Chat with Al - creates tasks from user messages"""
-    import requests
-    
-    # Use Kanban API URL from env var or default to Railway internal URL
-    kanban_api_url = os.environ.get('KANBAN_API_URL', 'http://hermes-kanban-api.railway.internal:8080')
-    
-    data = request.json
-    message = data.get('message', '')
-    
-    if not message:
-        return jsonify({'success': False, 'error': 'No message provided'}), 400
-    
-    # Simple task creation from chat message
-    # Create a task with the message as the title
-    try:
-        task_data = {
-            'title': message[:100],  # Truncate long messages
-            'assignee': None,  # Unassigned initially
-            'status': 'todo',
-            'body': f'Task created via dashboard chat',
+# ── Stats ───────────────────────────────────────────────────────────
+
+@app.route("/api/stats", methods=["GET"])
+def get_stats():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'pending_review'")
+    pending = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'todo'")
+    todo = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'in_progress'")
+    in_progress = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'blocked'")
+    blocked = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'review'")
+    review = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM tasks WHERE status = 'done'")
+    done = cur.fetchone()["count"]
+
+    cur.execute("SELECT COUNT(*) FROM tasks")
+    total = cur.fetchone()["count"]
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "stats": {
+            "total": total,
+            "pending_review": pending,
+            "todo": todo,
+            "in_progress": in_progress,
+            "blocked": blocked,
+            "review": review,
+            "done": done
         }
-        
-        # Send to Kanban API
-        response = requests.post(
-            f'{kanban_api_url}/api/tasks',
-            json=task_data,
-            timeout=5
-        )
-        
-        if response.status_code == 201:
-            result = response.json()
-            return jsonify({
-                'success': True,
-                'message': f"Task created: {message[:50]}...",
-                'task': result.get('task'),
-                'response': '✅ Task created and added to Kanban board!'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to create task',
-                'response': '❌ Failed to create task. Please try again.'
-            })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'response': '❌ Error connecting to Kanban API. Please try again.'
+    })
+
+
+# ── Workers ─────────────────────────────────────────────────────────
+
+@app.route("/api/workers", methods=["GET"])
+def list_workers():
+    """Return worker roster with status from heartbeat table"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT worker_id, status, last_seen, task_count FROM worker_heartbeat")
+    rows = {row["worker_id"]: dict(row) for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+
+    workers = []
+    for wid, info in WORKERS.items():
+        hb = rows.get(wid, {})
+        # If heartbeat is older than 2 minutes, mark offline
+        status = hb.get("status", "unknown")
+        last_seen = hb.get("last_seen")
+        if last_seen:
+            from datetime import datetime, timezone, timedelta
+            # last_seen may be naive or aware
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - last_seen > timedelta(minutes=2):
+                status = "offline"
+
+        workers.append({
+            "id": wid,
+            "name": info["name"],
+            "role": info["role"],
+            "telegram": info["tg"],
+            "status": status,
+            "url": info["url"],
+            "last_seen": last_seen.isoformat() if last_seen else None,
+            "task_count": hb.get("task_count", 0)
         })
 
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    """Get dashboard statistics from Hermes Kanban API"""
-    import requests
-    
-    # Use Kanban API URL from env var or default to Railway internal URL
-    kanban_api_url = os.environ.get('KANBAN_API_URL', 'http://hermes-kanban-api.railway.internal:8080')
-    
-    try:
-        response = requests.get(f'{kanban_api_url}/api/stats', timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('success'):
-                return jsonify({
-                    'success': True,
-                    'stats': data.get('stats', {'total': 0, 'todo': 0, 'in_progress': 0, 'done': 0}),
-                    'source': data.get('source', 'Hermes Kanban API - Live Data')
-                })
-    except Exception as e:
-        pass
-    
-    # Fallback: return zeros if API is unavailable
-    return jsonify({
-        'success': True,
-        'stats': {'total': 0, 'todo': 0, 'in_progress': 0, 'done': 0},
-        'source': 'Hermes Kanban API - Unavailable'
-    })
+    return jsonify({"success": True, "workers": workers })
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    debug = os.environ.get('FLASK_ENV', 'production') != 'production'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+
+@app.route("/api/workers/<worker_id>/heartbeat", methods=["POST"])
+def worker_heartbeat(worker_id):
+    """Workers call this to register they're alive"""
+    data = request.json or {}
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO worker_heartbeat (worker_id, status, last_seen, task_count)
+        VALUES (%s, %s, NOW(), %s)
+        ON CONFLICT (worker_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            last_seen = EXCLUDED.last_seen,
+            task_count = EXCLUDED.task_count
+    """, (worker_id, data.get("status", "online"), data.get("task_count", 0)))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"success": True})
+
+
+# ── Init ────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    init_db()
+    port = int(os.environ.get("PORT", 8080))
+    debug = os.environ.get("FLASK_ENV", "production") != "production"
+    app.run(host="0.0.0.0", port=port, debug=debug)

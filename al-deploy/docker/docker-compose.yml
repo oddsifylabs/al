@@ -1,78 +1,70 @@
 version: '3.8'
 
 services:
-  # Al Manager
-  al-manager:
-    build:
-      context: .
-      dockerfile: Dockerfile.hermes
-    environment:
-      - HERMES_PROFILE=al-manager
-      - OLLAMA_HOST=host.docker.internal:11434
-    volumes:
-      - hermes_data:/root/.hermes
-    ports:
-      - "8080:8080"  # Dashboard
-      - "8081:8081"  # Manager API
-    restart: unless-stopped
-    networks:
-      - al-network
-
-  # Al Dashboard
-  al-dashboard:
-    build:
-      context: ./al-dashboard
-      dockerfile: Dockerfile
-    environment:
-      - AL_MANAGER_PROFILE=al-manager
-      - HERMES_HOME=/root/.hermes
-      - FLASK_ENV=production
-    volumes:
-      - hermes_data:/root/.hermes:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      - al-manager
-    restart: unless-stopped
-    networks:
-      - al-network
-
-  # Optional: Ollama (if running models locally)
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    restart: unless-stopped
-    networks:
-      - al-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  # Optional: PostgreSQL (for production Kanban)
+  # PostgreSQL — Shared Kanban database
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_DB=al_kanban
-      - POSTGRES_USER=al
-      - POSTGRES_PASSWORD=change-me
+      POSTGRES_DB: al_hub
+      POSTGRES_USER: al
+      POSTGRES_PASSWORD: al_secret
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    restart: unless-stopped
+    networks:
+      - al-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U al -d al_hub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AL Dashboard — Central Hub
+  al-dashboard:
+    build:
+      context: ../../al-dashboard
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://al:al_secret@postgres:5432/al_hub
+      FLASK_ENV: production
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - al-network
 
+  # Jed Manager Poller
+  jed-manager:
+    build:
+      context: ../../al-manager
+      dockerfile: Dockerfile
+    environment:
+      DASHBOARD_URL: http://al-dashboard:8080
+      POLL_INTERVAL: 30
+    depends_on:
+      - al-dashboard
+    networks:
+      - al-network
+
+  # Worker Pollers (enable the ones you need)
+  # ruth-worker:
+  #   build:
+  #     context: ../../al-workers
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     WORKER_ID: ruth
+  #     DASHBOARD_URL: http://al-dashboard:8080
+  #     POLL_INTERVAL: 30
+  #   depends_on:
+  #     - al-dashboard
+  #   networks:
+  #     - al-network
+
 volumes:
-  hermes_data:
-  ollama_data:
   postgres_data:
 
 networks:
