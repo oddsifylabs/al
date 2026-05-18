@@ -18,7 +18,7 @@ KANBAN_DB = os.path.join(HERMES_HOME, 'profiles', AL_MANAGER_PROFILE, 'kanban.db
 @app.route('/')
 def dashboard():
     """Main dashboard view"""
-    return render_template('dashboard.html')
+    return render_template('dashboard-modern.html')
 
 @app.route('/health')
 def health():
